@@ -15,6 +15,7 @@ const Q_REDIRECT = "Q45403344";
 const P_NAMEDAS = "P1810";
 const P_DETMETHOD = "P459";
 const Q_HTTPREDIRECT = "Q110227941";
+const Q_LINKROT = 'Q1193907';
 
 type IdItem = {
   item: {
@@ -107,7 +108,7 @@ for (const item of items) {
             rank: "deprecated",
             value: oldId,
             qualifiers: {
-              [P_REASON]: 'Q404',
+              [P_REASON]: 'Q1193907',
             },
           },
         ],
@@ -124,6 +125,7 @@ for (const item of items) {
       rank: "deprecated",
       summary: `Deprecating World Athletics athlete ID ${oldId} due to 404`,
     });
+    continue;
   }
   const editResult = await wbEdit.entity.edit({
     type: "item",
