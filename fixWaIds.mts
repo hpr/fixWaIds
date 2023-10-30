@@ -27,11 +27,6 @@ type IdItem = {
   };
   done?: boolean;
 };
-type CompetitorBasicInfo = {
-  resultsByYear: {
-    activeYears: string[];
-  };
-};
 
 let items: IdItem[];
 try {
@@ -76,6 +71,8 @@ const wbEdit = wikibaseEdit({
 });
 
 for (const item of items) {
+  const idx = items.indexOf(item);
+  console.log(idx, "/", items.length);
   if (item.done) continue;
   const qid = item.item.value.split("/").at(-1);
   const name = item.itemLabel.value;
@@ -94,8 +91,8 @@ for (const item of items) {
     .querySelector("meta[name=title]")
     ?.getAttribute("content")
     ?.split(" | ")[0];
-  console.log(oldId, name, newId, statedAs);
-  await wbEdit.entity.edit({
+  console.log(oldId, name, newId, statedAs, item.item.value);
+  const editResult = await wbEdit.entity.edit({
     type: "item",
     id: qid,
     claims: {
@@ -119,6 +116,15 @@ for (const item of items) {
     reconciliation: { mode: "merge" },
     summary: `Updating World Athletics athlete ID from deprecated value ${oldId} to new value ${newId}`,
   });
+  const depClaimId = editResult.entity.claims[P_WAID].find(
+    (claim: { qualifiers: { [k: string]: any } }) =>
+      P_REASON in claim.qualifiers
+  )?.id;
+  await wbEdit.claim.update({
+    guid: depClaimId,
+    rank: "deprecated",
+    summary: `Deprecating redirected World Athletics athlete ID ${oldId}`,
+  });
   item.done = true;
-  break;
+  fs.writeFileSync("./data/shortWaIds.json", JSON.stringify(items));
 }
