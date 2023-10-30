@@ -98,21 +98,32 @@ for (const item of items) {
     ?.split(" | ")[0];
   console.log(oldId, name, newId, statedAs, item.item.value);
   if (statedAs === "Error 404") {
-    const url = wbk.getEntities({ ids: [qid] });
-    const { entities } = await (await fetch(url)).json();
-    const badClaim = entities[qid].claims[P_WAID].find(
-      (c: { mainsnak?: { datavalue?: { value?: string } } }) =>
-        c?.mainsnak?.datavalue?.value === oldId
-    );
-    await wbEdit.claim.update({
-      guid: badClaim.id,
-      rank: "deprecated",
-      qualifiers: {
-        [P_REASON]: "Q404",
+    const editResult = await wbEdit.entity.edit({
+      type: "item",
+      id: qid,
+      claims: {
+        [P_WAID]: [
+          {
+            rank: "deprecated",
+            value: oldId,
+            qualifiers: {
+              [P_REASON]: 'Q404',
+            },
+          },
+        ],
       },
-      summary: `Deprecating broken World Athletics athlete ID ${oldId}`,
+      reconciliation: { mode: "merge" },
+      summary: `Deprecating World Athletics athlete ID ${oldId} due to 404`,
     });
-    continue;
+    const depClaimId = editResult.entity.claims[P_WAID].find(
+      (claim: { qualifiers: { [k: string]: any } }) =>
+        P_REASON in claim.qualifiers
+    )?.id;
+    await wbEdit.claim.update({
+      guid: depClaimId,
+      rank: "deprecated",
+      summary: `Deprecating World Athletics athlete ID ${oldId} due to 404`,
+    });
   }
   const editResult = await wbEdit.entity.edit({
     type: "item",
