@@ -2,6 +2,11 @@ import fs from "fs";
 import wikibaseEdit from "wikibase-edit";
 import dotenv from "dotenv";
 import { JSDOM } from "jsdom";
+import { WBK } from "wikibase-sdk";
+const wbk = WBK({
+  instance: "https://www.wikidata.org",
+  sparqlEndpoint: "https://query.wikidata.org/sparql",
+});
 dotenv.config();
 
 const P_WAID = "P1146";
@@ -74,7 +79,7 @@ for (const item of items) {
   const idx = items.indexOf(item);
   console.log(idx, "/", items.length);
   if (item.done) continue;
-  const qid = item.item.value.split("/").at(-1);
+  const qid = item.item.value.split("/").at(-1) as `Q${number}`;
   const name = item.itemLabel.value;
   const oldId = item.id.value;
   const { window } = new JSDOM(
@@ -92,6 +97,23 @@ for (const item of items) {
     ?.getAttribute("content")
     ?.split(" | ")[0];
   console.log(oldId, name, newId, statedAs, item.item.value);
+  if (statedAs === "Error 404") {
+    const url = wbk.getEntities({ ids: [qid] });
+    const { entities } = await (await fetch(url)).json();
+    const badClaim = entities[qid].claims[P_WAID].find(
+      (c: { mainsnak?: { datavalue?: { value?: string } } }) =>
+        c?.mainsnak?.datavalue?.value === oldId
+    );
+    await wbEdit.claim.update({
+      guid: badClaim.id,
+      rank: "deprecated",
+      qualifiers: {
+        [P_REASON]: "Q404",
+      },
+      summary: `Deprecating broken World Athletics athlete ID ${oldId}`,
+    });
+    continue;
+  }
   const editResult = await wbEdit.entity.edit({
     type: "item",
     id: qid,
