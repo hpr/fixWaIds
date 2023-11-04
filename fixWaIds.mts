@@ -15,7 +15,8 @@ const Q_REDIRECT = "Q45403344";
 const P_NAMEDAS = "P1810";
 const P_DETMETHOD = "P459";
 const Q_HTTPREDIRECT = "Q110227941";
-const Q_LINKROT = 'Q1193907';
+const Q_LINKROT = "Q1193907";
+const Q_WITHDRAWN = "Q21441764";
 
 type IdItem = {
   item: {
@@ -33,6 +34,8 @@ type IdItem = {
   };
   done?: boolean;
 };
+
+fs.unlinkSync("./data/shortWaIds.json");
 
 let items: IdItem[];
 try {
@@ -83,22 +86,32 @@ for (const item of items) {
   const qid = item.item.value.split("/").at(-1) as `Q${number}`;
   const name = item.itemLabel.value;
   const oldId = item.id.value;
-  const { window } = new JSDOM(
-    await (await fetch(`https://worldathletics.org/athletes/_/${oldId}`)).text()
-  );
-  const newId = window.document
-    .querySelector("meta[name=url]")
-    ?.getAttribute("content")
-    ?.split("/")
-    .at(-1)
-    ?.split("-")
-    .at(-1);
+  const waUrl = `https://worldathletics.org/athletes/_/${oldId}`;
+  let attempts = 0;
+  let response: Response | null = null;
+  try {
+    response = await fetch(waUrl);
+  } catch (e) {
+    response = new Response(null, { status: 502 });
+  }
+  while (![200, 404, 500].includes(response.status)) {
+    console.log(await response.text());
+    if (attempts++ > 5) break;
+    await new Promise((res) => setTimeout(res, 10000));
+    try {
+      response = await fetch(waUrl);
+    } catch (e) {
+      response = new Response(null, { status: 502 });
+    }
+  }
+  const { window } = new JSDOM(await response?.text());
+  const newId = response?.url.split("/").at(-1);
   const statedAs = window.document
     .querySelector("meta[name=title]")
     ?.getAttribute("content")
-    ?.split(" | ")[0];
-  console.log(oldId, name, newId, statedAs, item.item.value);
-  if (statedAs === "Error 404") {
+    ?.split(" | ")?.[0];
+  console.log(oldId, name, newId, statedAs, response?.status, item.item.value);
+  if (statedAs === "Error 404" || statedAs === "Error 500") {
     const editResult = await wbEdit.entity.edit({
       type: "item",
       id: qid,
@@ -108,23 +121,37 @@ for (const item of items) {
             rank: "deprecated",
             value: oldId,
             qualifiers: {
-              [P_REASON]: 'Q1193907',
+              [P_REASON]: newId === oldId ? Q_WITHDRAWN : Q_REDIRECT,
             },
           },
+          ...(newId !== oldId
+            ? [
+                {
+                  rank: "deprecated",
+                  value: newId,
+                  qualifiers: {
+                    [P_REASON]: Q_LINKROT,
+                  },
+                },
+              ]
+            : []),
         ],
       },
       reconciliation: { mode: "merge" },
-      summary: `Deprecating World Athletics athlete ID ${oldId} due to 404`,
+      summary: `Deprecating World Athletics athlete ID ${oldId}`,
     });
-    const depClaimId = editResult.entity.claims[P_WAID].find(
+    const depClaimIds = editResult.entity.claims[P_WAID].filter(
       (claim: { qualifiers: { [k: string]: any } }) =>
         P_REASON in claim.qualifiers
-    )?.id;
-    await wbEdit.claim.update({
-      guid: depClaimId,
-      rank: "deprecated",
-      summary: `Deprecating World Athletics athlete ID ${oldId} due to 404`,
-    });
+    ).map((c: { id: string }) => c.id);
+    for (const depClaimId of depClaimIds) {
+      await wbEdit.claim.update({
+        guid: depClaimId,
+        rank: "deprecated",
+        summary: `Deprecating World Athletics athlete ID ${oldId}`,
+      });
+    }
+    item.done = true;
     continue;
   }
   const editResult = await wbEdit.entity.edit({
@@ -151,15 +178,16 @@ for (const item of items) {
     reconciliation: { mode: "merge" },
     summary: `Updating World Athletics athlete ID from deprecated value ${oldId} to new value ${newId}`,
   });
-  const depClaimId = editResult.entity.claims[P_WAID].find(
+  const depClaim = editResult.entity.claims[P_WAID].find(
     (claim: { qualifiers: { [k: string]: any } }) =>
       P_REASON in claim.qualifiers
-  )?.id;
+  );
   await wbEdit.claim.update({
-    guid: depClaimId,
+    guid: depClaim?.id,
     rank: "deprecated",
     summary: `Deprecating redirected World Athletics athlete ID ${oldId}`,
+    qualifiers: depClaim?.qualifiers,
   });
   item.done = true;
-  fs.writeFileSync("./data/shortWaIds.json", JSON.stringify(items));
+  // fs.writeFileSync("./data/shortWaIds.json", JSON.stringify(items));
 }
