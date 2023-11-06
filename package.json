@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "tsc --module nodenext --outDir build fixWaIds.mts && echo running... && node build/fixWaIds.mjs"
+    "start": "tsc --module nodenext --outDir build fixWaIds.mts && echo running... && node build/fixWaIds.mjs",
+    "waDifferent": "tsc --module nodenext --outDir build waDifferent.mts && echo running... && node build/waDifferent.mjs"
   },
   "keywords": [],
   "author": "",
